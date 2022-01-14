@@ -1,0 +1,235 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+	<meta name="viewport" content="width=device-width,initial-scale=1">
+	<meta charset="utf-8">
+	<title>BiDi Demo</title>
+	<script src="bidi.js"></script>
+	<style>
+		#text-input,
+		#colorized-input {
+			font-size: 3rem;
+		}
+
+		#text-input {
+			border: dashed black 1px;
+		}
+
+		#colorized-input {
+			margin-top: 5px;
+			text-align: center;
+		}
+
+		#dir-button {
+			align-self: flex-start;
+			height: 50px;
+			margin: 5px;
+			flex-grow: 1;
+		}
+
+		#input-container {
+			flex-grow: 30;
+			overflow-wrap: anywhere;
+		}
+
+		#input-container>* {
+			margin-bottom: 10px;
+		}
+
+		#description {
+			margin-bottom: 10px;
+		}
+	</style>
+</head>
+
+<body>
+	<div id="description">
+		<div><span style="color: blue;">Blue</span>: Left-To-Right</div>
+		<div><span style="color: red;">Red</span>: Right-To-Left</div>
+		<div><span style="color: gray;">Gray</span>: Neutral</div>
+		<div><span style="color: green;">Green</span>: Weak</div>
+		<div><span style="color: #d4d400;">Yellow</span>: Directional Formatting</div>
+	</div>
+	<div style="display: flex;">
+		<div id="input-container">
+			<div id="text-input" contenteditable="" spellcheck="false"></div>
+			<!-- <textarea id="text-input" cols="50"></textarea> -->
+			<details open="true">
+				<summary>Insert BiDi Characters</summary>
+				<div id="bidi-char-buttons">
+					<button title="Left-To-Right Mark" data-value="&#8206;">LRM</button>
+					<button title="Right-To-Left Mark" data-value="&#8207;">RLM</button>
+					<button title="Arabic Letter Mark" data-value="&#1564;">ALM</button>
+					<button title="Left-To-Right Embedding" data-value="&#8234;">LRE</button>
+					<button title="Right-To-Left Embedding" data-value="&#8235;">RLE</button>
+					<button title="Left-To-Right Override" data-value="&#8237;">LRO</button>
+					<button title="Right-To-Left Override" data-value="&#8238;">RLO</button>
+					<button title="Pop Directional Formatting" data-value="&#8236;">PDF</button>
+					<button title="Left-To-Right Isolate" data-value="&#8294;">LRI</button>
+					<button title="Right-To-Left Isolate" data-value="&#8295;">RLI</button>
+					<button title="First Strong Isolate" data-value="&#8296;">FSI</button>
+					<button title="Pop Directional Isolate" data-value="&#8297;">PDI</button>
+				</div>
+			</details>
+			<div id="colorized-input"></div>
+		</div>
+		<button id="dir-button">Switch Direction</button>
+	</div>
+	<canvas id="canvas" width="1000" height="800"></canvas>
+	<script>
+		const bidi = bidi_js();
+
+		const input = document.getElementById("text-input");
+		const colorizedInput = document.getElementById("colorized-input");
+		const inputContainer = document.getElementById("input-container");
+		const dirButton = document.getElementById("dir-button");
+		const canvas = document.getElementById("canvas");
+		const ctx = canvas.getContext("2d");
+
+		setCanvasDimensions(document.body.clientWidth, document.body.clientHeight);
+		ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+
+		window.addEventListener('resize', () => {
+			// Reset transformation matrix
+			ctx.setTransform(1, 0, 0, 1, 0, 0);
+			setCanvasDimensions(document.body.clientWidth, document.body.clientHeight);
+			ctx.scale(window.devicePixelRatio, window.devicePixelRatio);
+			draw();
+		});
+
+		input.addEventListener("input", draw);
+
+		dirButton.addEventListener("click", e => {
+			inputContainer.dir = inputContainer.dir == "rtl" ? "ltr" : "rtl";
+			// recalculate embedding levels
+			colorizeLevels();
+		});
+
+		const bidiButtons = document.querySelectorAll("#bidi-char-buttons > button");
+		for (const button of bidiButtons) {
+			button.addEventListener("click", e => {
+				input.focus();
+				document.execCommand("insertText", false, e.target.dataset.value);
+				draw();
+			});
+		}
+
+		function draw() {
+			const text = input.textContent;
+			colorizeLevels();
+			const rectWidth = 25;
+			const rectHeight = 35;
+			const offsetX = 10;
+			let offsetY = 25;
+			const gapX = 10;
+			ctx.clearRect(0, 0, canvas.width, canvas.height);
+			ctx.strokeStyle = 'red';
+			ctx.fillStyle = 'black';
+			let j = 0;
+			for (let i = 0; i < text.length; i++) {
+				if ((offsetX + j * (rectWidth + gapX) + rectWidth) * window.devicePixelRatio >= canvas.width) {
+					offsetY += 70;
+					j = 0;
+				}
+				const bidiType = bidi.getBidiCharTypeName(text[i]);
+				ctx.strokeStyle = colorForChar(bidiType);
+
+				ctx.strokeRect(offsetX + j * (rectWidth + gapX), offsetY, rectWidth, rectHeight);
+				ctx.fillText(text[i], offsetX + j * (rectWidth + gapX) + rectWidth / 2 - 5, offsetY - 10);
+				let num = (i + 1).toString();
+				let numWidth = ctx.measureText(num).width;
+				ctx.fillText(num, offsetX + j * (rectWidth + gapX) + rectWidth / 2 - numWidth / 2, offsetY +
+					rectHeight / 2);
+				let bidiTypeWidth = ctx.measureText(bidiType).width;
+				ctx.fillText(bidiType, offsetX + j * (rectWidth + gapX) + rectWidth / 2 - bidiTypeWidth / 2, offsetY +
+					rectHeight - 5);
+				j++;
+			}
+		}
+
+		const bidiColors = {
+			// Left-To-Right characters
+			'L': 'blue',
+
+			// Right-To-Left characters
+			'R': 'red',
+			'AL': 'red',
+
+			// Weak characters
+			'EN': 'green',
+			'ES': 'green',
+			'ET': 'green',
+			'AN': 'green',
+			'CS': 'green',
+			'NSM': 'green',
+			'BN': 'green',
+
+			// Neutral characters
+			'B': 'gray',
+			'S': 'gray',
+			'WS': 'gray',
+			'ON': 'gray',
+
+			// Directional formatting characters
+			'LRE': 'yellow',
+			'LRO': 'yellow',
+			'RLE': 'yellow',
+			'RLO': 'yellow',
+			'PDF': 'yellow',
+			'LRI': 'yellow',
+			'RLI': 'yellow',
+			'FSI': 'yellow',
+			'PDI': 'yellow',
+		};
+
+		function colorizeLevels() {
+			const text = input.textContent;
+			colorizedInput.innerHTML = '';
+			var embeddingLevels = bidi.getEmbeddingLevels(
+				text,
+				inputContainer.dir,
+			)
+
+			const {
+				levels,
+				paragraphs
+			} = embeddingLevels;
+
+			let i = 0;
+			while (i < text.length) {
+				let currentLevel = levels[i];
+				const dir = levelDir(currentLevel);
+				let j = i + 1;
+				while (j < text.length && dir === levelDir(levels[j])) {
+					j++;
+				}
+
+				let node = document.createElement("span");
+				node.style.backgroundColor = bidiColors[dir];
+				node.style.border = "solid 1px black";
+				let levelText = text.slice(i, j);
+				node.textContent = levelText;
+				colorizedInput.appendChild(node);
+				i = j;
+			}
+		}
+
+		function levelDir(level) {
+			return level % 2 ? 'R' : 'L';
+		}
+
+		function colorForChar(bidiType) {
+			let color = bidiColors[bidiType];
+			if (!color) color = 'black';
+			return color;
+		}
+
+		function setCanvasDimensions(width, height) {
+			canvas.width = width - canvas.offsetLeft;
+			canvas.height = height - canvas.offsetTop;
+		}
+	</script>
+</body>
+
+</html>
